@@ -4,6 +4,8 @@ import numpy as np
 import scipy.linalg as sla
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
+import sparseqr
+import pybanded
 
 
 solvers = []
@@ -106,4 +108,27 @@ class ScipyBanded(DenseSolver):
 
     def solve(self, vector):
         return sla.solve_banded(self.lu, self.ab, vector, check_finite=False)
+
+
+@add_solver
+class SPQR_solve(SparseSolver):
+    """SuiteSparse QR solve"""
+
+    def __init__(self, matrix):
+        self.matrix = matrix
+
+    def solve(self, vector):
+        return sparseqr.solve(self.matrix, vector)
+
+
+@add_solver
+class BandedQR(DenseSolver):
+    """pybanded QR solve"""
+
+    def __init__(self, matrix):
+        matrix = pybanded.BandedMatrix.from_sparse(matrix)
+        self.QR = pybanded.BandedQR(matrix)
+
+    def solve(self, vector):
+        return self.QR.solve(vector)
 

@@ -9,15 +9,16 @@ import pickle
 import shelve
 import parameters as params
 import problem
+from itertools import product
 
 
-# Build resolution array
-log2_min = int(np.log2(params.min_res))
-log2_max = int(np.log2(params.max_res))
-resolutions = 2 ** np.arange(log2_min, log2_max+1)
+# Build argument iterator
+keys = params.args.keys()
+values = params.args.values()
+prod_args = [dict(zip(keys, valset)) for valset in product(*values)]
 
 # Build LHS matrices
-LHS = [problem.build_LHS(Nz) for Nz in resolutions]
+LHS = [problem.build_LHS(**args) for args in prod_args]
 
 # Build size array
 sizes = np.array([A.shape[0] for A in LHS])
@@ -33,7 +34,7 @@ for A, size in zip(LHS, sizes):
 
 # Save data
 with shelve.open('matrices.dat', 'n', protocol=pickle.HIGHEST_PROTOCOL) as file:
-    file['resolutions'] = resolutions
+    file['args'] = prod_args
     file['sizes'] = sizes
     file['LHS'] = LHS
     file['RHS'] = RHS
