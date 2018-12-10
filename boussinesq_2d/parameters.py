@@ -7,11 +7,10 @@ from collections import OrderedDict
 
 # Matrix parameters
 args = OrderedDict()
-args['Nz'] = 2**np.arange(6, 9)
-args['bw'] = np.arange(5)
+args['Nz'] = 2**np.arange(6, 10)
+args['bw'] = 2**np.arange(6)
 args['format'] = ['csr', 'csc']
 
 # Timing parameters
-loops = 50
-sparse_only = False
+loops = 10
 

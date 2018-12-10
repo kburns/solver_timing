@@ -54,4 +54,5 @@ def build_LHS(Nz, bw, format):
     for i in range(1):
         solver.step(dt)
 
-    return solver.pencils[0].LHS
+    return solver.pencils[0].LHS.asformat(format)
+
