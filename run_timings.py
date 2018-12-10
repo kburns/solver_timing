@@ -1,87 +1,84 @@
-"""
-Script for timing solver performance.
-"""
-
+"""Speed-test sparse solvers."""
 
 import numpy as np
 import pickle
 import shelve
 import time
 import solvers
-import parameters as params
+import logging
+import xarray
+from memory_profiler import memory_usage
+from collections import OrderedDict
+logger = logging.getLogger(__name__)
 
 
-# Setup timer and solvers
-timer = time.perf_counter
-loops = params.loops
-if params.sparse_only:
-    solvers = [s for s in solvers.solvers if s.sparse]
-else:
-    solvers = solvers.solvers
-
-# Open data
-with shelve.open('matrices.dat', 'r') as file:
-    Args = file['args']
-    sizes = file['sizes']
-    LHS = file['LHS']
-    RHS = file['RHS']
-
-# Create reference solutions
-solver = solvers[0]
-X_ref = []
-for A, b, in zip(LHS, RHS):
-    s = solver(A)
-    X_ref.append(s.solve(b))
-all_match = True
-
-# Time solvers
-start_times = []
-solve_times = []
-
-# Loop over solvers
-for solver in solvers:
-
-    print(solver.__doc__)
-    start_time = []
-    solve_time = []
-
-    # Loop over resolutions
-    for args, A, b, x_ref in zip(Args, LHS, RHS, X_ref):
-        print(str(args), end=': ')
+def time_solver(solver, loops, matrix_file='matrices.db', timing_file='timing', timer=time.perf_counter):
+    """Time solver over all saved matrices."""
+    print("Timing solver: %s" %solver.__doc__)
+    # Open data
+    with shelve.open(matrix_file, 'r') as file:
+        args = file['args']
+        sizes = file['sizes']
+        LHS = file['LHS']
+        RHS = file['RHS']
+    # Build coordinate arrays
+    coords = OrderedDict()
+    for key in args[0]:
+        coords[key] = np.sort(list(set(arg[key] for arg in args)))
+    shape = [len(c) for c in coords.values()]
+    start_first = xarray.DataArray(data=np.zeros(shape), coords=coords.values(), dims=coords.keys())
+    start_times = xarray.DataArray(data=np.zeros(shape), coords=coords.values(), dims=coords.keys())
+    start_mem   = xarray.DataArray(data=np.zeros(shape), coords=coords.values(), dims=coords.keys())
+    solve_first = xarray.DataArray(data=np.zeros(shape), coords=coords.values(), dims=coords.keys())
+    solve_times = xarray.DataArray(data=np.zeros(shape), coords=coords.values(), dims=coords.keys())
+    solve_mem   = xarray.DataArray(data=np.zeros(shape), coords=coords.values(), dims=coords.keys())
+    # Loop over matrices
+    for arg, lhs, rhs in zip(args, LHS, RHS):
+        print("  %s" %arg)
         # Warm-up
-        s = solver(A)
+        start = timer()
+        s = solver(lhs)
+        end = timer()
+        start_first.loc[arg] = (end - start)
         # Compute startup timing
+        start_mem = memory_usage(max_usage=True)
         start = timer()
+        s = []
         for i in range(loops):
-            s = solver(A)
+            s.append(solver(lhs))
         end = timer()
-        start_time.append((end-start)/loops)
-        # Warm-up and check solver consistency
-        x = s.solve(b)
-        match = np.allclose(x, x_ref)
-        print('match:', match)
-        all_match = all_match and match
+        end_mem = memory_usage(max_usage=True)
+        start_times.loc[arg] = (end - start) / loops
+        start_mem.loc[arg] = (end_mem - start_mem) / loops
+        # Warm-up
+        start = timer()
+        x = s.solve(rhs)
+        end = timer()
+        solve_first.loc[arg] = (end - start)
         # Compute solve timing
+        start_mem = memory_usage(max_usage=True)
         start = timer()
+        x = []
         for i in range(loops):
-            s.solve(b)
+            x.append(s.solve(lhs))
         end = timer()
-        solve_time.append((end-start)/loops)
+        end_mem = memory_usage(max_usage=True)
+        solve_times.loc[arg] = (end - start) / loops
+        solve_mem.loc[arg] = (end_mem - start_mem) / loops
+    ds = xarray.Dataset({'start_time': start_times,
+                         'solve_time': solve_times})
+    ds.attrs['loops'] = loops
+    ds.attrs['solver_name'] = solver.__name__
+    ds.attrs['solver_doc'] = solver.__doc__
+    # Save dataset
+    timing_file = timing_file + '_%s.pkl' %solver.__name__
+    pickle.dump(ds, open(timing_file, 'wb'))
 
-    start_times.append(np.array(start_time))
-    solve_times.append(np.array(solve_time))
 
-# Save data
-solver_names = [s.__name__ for s in solvers]
-solver_docs = [s.__doc__ for s in solvers]
-with shelve.open('timings.dat', 'n', protocol=pickle.HIGHEST_PROTOCOL) as file:
-    file['loops'] = loops
-    file['args'] = Args
-    file['sizes'] = sizes
-    file['solver_names'] = solver_names
-    file['solver_docs'] = solver_docs
-    file['start_times'] = start_times
-    file['solve_times'] = solve_times
-
-print('All match:', all_match)
+if __name__ == "__main__":
+    import parameters as params
+    # Time all solvers
+    solvers = solvers.solvers
+    for solver in solvers:
+        time_solver(solver, params.loops)
 
