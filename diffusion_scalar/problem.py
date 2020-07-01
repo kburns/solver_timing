@@ -7,7 +7,7 @@ import numpy as np
 import dedalus.public as de
 
 
-def build_LHS(Nz, bw, format):
+def build_LHS(Nz, bw, format, entry_cutoff=0):
 
     # Parameters
     dt = 1e-3
@@ -16,11 +16,14 @@ def build_LHS(Nz, bw, format):
     ts = de.timesteppers.RK222
 
     # Create bases and domain
-    z_basis = de.Chebyshev('z', Nz, interval=(-1, 1), dealias=3/2)
+    z1 = de.Chebyshev('z', Nz, interval=(-1, 1), dealias=3/2)
+    z2 = de.Chebyshev('z', Nz, interval=(1, 2), dealias=3/2)
+    z3 = de.Chebyshev('z', Nz, interval=(2, 3), dealias=3/2)
+    z_basis = de.Compound('z', [z1,z2,z3])
     domain = de.Domain([z_basis], grid_dtype=np.complex128)
 
     # 2D Boussinesq hydrodynamics
-    problem = de.IVP(domain, variables=['T','Tz'], ncc_cutoff=0, max_ncc_terms=bw, entry_cutoff=1e-16)
+    problem = de.IVP(domain, variables=['T','Tz'], ncc_cutoff=0, max_ncc_terms=bw, entry_cutoff=entry_cutoff)
     problem.meta[:]['z']['dirichlet'] = True
     problem.parameters['kx'] = kx
     problem.parameters['sigma'] = sigma
